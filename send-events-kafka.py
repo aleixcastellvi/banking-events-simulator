@@ -8,16 +8,23 @@ import kafka
 from confluent_kafka import KafkaError
 
 
-# Constants for account types and their weights
-ACCOUNT_TYPES = ['checking', 'savings']
-WEIGHTS_ACCOUNT_TYPES = [0.8, 0.2] # 80% chance for checking, 20% for savings
+# Constants
+TRANSACTIONS_STATUS = ["Completed", "Cancelled"]
+WEIGHTS_TRANSACTION = [0.9, 0.1] # 90% de probabilidad de transacciones completadas, 10% de transacciones canceladas
+
+TRANSACTIONS_TYPES = ['Income', 'Expense', 'Bizum', 'Transfer']
+DEVICES_TYPE = ["Smartphone", "Laptop", "Desktop", "Smartwatch"]
+PAYMENTS_METHOD = ["Credit Card", "Debit Card", "Bank Transfer", "E-wallet", "PayPal"]
 
 # Constant for currency codes per country
-COUNTRY_CURRENCY_CODES = {'ES':'EUR', 'FR':'EUR', 'DE':'EUR', 'IT':'EUR', 'GB':'GBP', 'US':'USD'}
-
-# Constant for the transaction type available
-TRANSACTION_TYPES = ['income', 'expense', 'bizum', 'transfer']
-
+COUNTRY_CURRENCY_CODES = {
+    'ES': {'currency': 'EUR', 'country_name': 'Spain'},
+    'FR': {'currency': 'EUR', 'country_name': 'France'},
+    'DE': {'currency': 'EUR', 'country_name': 'Germany'},
+    'IT': {'currency': 'EUR', 'country_name': 'Italy'},
+    'GB': {'currency': 'GBP', 'country_name': 'United Kingdom'},
+    'US': {'currency': 'USD', 'country_name': 'United States'}
+}
 
 def setup_kafka_producer():
     """
@@ -46,15 +53,7 @@ def send_to_kafka(topic, event_data):
         return None
 
 # Generate data list for 100 clients
-clients_data = [
-    {
-        'client_id': str(uuid.uuid4()),
-        'account_data': {
-            'type': random.choices(ACCOUNT_TYPES, weights=WEIGHTS_ACCOUNT_TYPES)[0],
-            'number': random.choice(list(COUNTRY_CURRENCY_CODES.keys())) + ''.join(str(random.randint(0, 9)) for _ in range(18))
-        }
-    } for i in range(1, 101)
-]
+clients_data = [str(uuid.uuid4()) for _ in range(1, 101)]
 
 event_sended = 1
 
@@ -63,13 +62,24 @@ try:
     while True:
 
         kafka_producer = setup_kafka_producer()
-
+        
+        # Randomly generate transaction data
         client = random.choice(clients_data)
-        transaction_type = random.choice(TRANSACTION_TYPES)
 
-        # If the destination of the event is a savings account, only transfers are allowed
-        if client['account_data']['type'] == 'savings':
-            transaction_type = 'transfer'
+        country_code = random.choice(list(COUNTRY_CURRENCY_CODES.keys()))
+        account_number_client = country_code + ''.join(str(random.randint(0, 9)) for _ in range(18))
+        currency = COUNTRY_CURRENCY_CODES[country_code]['currency']
+        country_name = COUNTRY_CURRENCY_CODES[country_code]['country_name']
+        
+        destination_country_code = random.choice(list(COUNTRY_CURRENCY_CODES.keys()))
+        destination_account_number = destination_country_code + ''.join(str(random.randint(0, 9)) for _ in range(18))
+        destination_currency = COUNTRY_CURRENCY_CODES[destination_country_code]['currency']
+        destination_country_name = COUNTRY_CURRENCY_CODES[destination_country_code]['country_name']
+        transaction_type = random.choice(TRANSACTIONS_TYPES)
+
+        device_type = random.choice(DEVICES_TYPE)
+        transaction_status = random.choices(TRANSACTIONS_STATUS, weights=WEIGHTS_TRANSACTION)[0]
+        payment_method = random.choice(PAYMENTS_METHOD)
 
         if transaction_type == 'income':
             amount = round(random.uniform(1000, 5000), 2)
@@ -84,20 +94,27 @@ try:
         dt_event = datetime.datetime.fromtimestamp(ts_event/1000)
 
         event_transaction = {
-            'timestamp': ts_event, 
-            'dataitem': str(dt_event),
-            'client_id': client['client_id'],
-            'account_number_client': client['account_data']['number'],
-            'transaction_data': {
-                'transaction_type': transaction_type,
-                'amount': amount,
-                'currency_code': COUNTRY_CURRENCY_CODES[client['account_data']['number'][:2]],
-                'destination_account_number': random.choice(list(COUNTRY_CURRENCY_CODES.keys())) + ''.join(str(random.randint(0, 9)) for _ in range(18)),
-                'account_type': client['account_data']['type'],
-            }
+            "txn_id": "txn-" + str(uuid.uuid4()),
+            "timestamp": ts_event, 
+            "dataitem": str(dt_event),
+            "client_id": client,
+            "account_number_client": account_number_client,
+            "txn_data": {
+                "destination_account_number": destination_account_number,
+                "txn_type": transaction_type,
+                "amount": amount,
+                "currency_code": destination_currency,
+                "destination_country": destination_country_name
+            },
+            "country": country_name,
+            "device_type": device_type,
+            "txn_status": transaction_status,
+            "payment_method": payment_method,
+
         }
 
         send_to_kafka(config.TOPIC, event_transaction)
+        #print(json.dumps(event_transaction, indent=2))
         print(f"Transaction #{event_sended} sent to the producer")
         event_sended += 1
         time.sleep(3)
