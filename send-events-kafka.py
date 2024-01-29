@@ -3,6 +3,7 @@ import random
 import time
 import uuid
 import json
+import datetime
 import kafka
 from confluent_kafka import KafkaError
 
@@ -79,17 +80,20 @@ try:
         else:
             amount = round(random.uniform(50, 500), 2)
 
+        ts_event = int(time.time() * 1000) # timestamp in milliseconds
+        dt_event = datetime.datetime.fromtimestamp(ts_event/1000)
+
         event_transaction = {
-            'timestamp': int(time.time() * 1000), # timestamp in milliseconds
-            'dataitem': '',
+            'timestamp': ts_event, 
+            'dataitem': str(dt_event),
             'client_id': client['client_id'],
             'account_number_client': client['account_data']['number'],
             'transaction_data': {
                 'transaction_type': transaction_type,
                 'amount': amount,
-                'coin': COUNTRY_CURRENCY_CODES[client['account_data']['number'][:2]],
-                'account_number_destination': random.choice(list(COUNTRY_CURRENCY_CODES.keys())) + ''.join(str(random.randint(0, 9)) for _ in range(18)),
-                'account': client['account_data']['type'],
+                'currency_code': COUNTRY_CURRENCY_CODES[client['account_data']['number'][:2]],
+                'destination_account_number': random.choice(list(COUNTRY_CURRENCY_CODES.keys())) + ''.join(str(random.randint(0, 9)) for _ in range(18)),
+                'account_type': client['account_data']['type'],
             }
         }
 
